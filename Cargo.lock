@@ -10,7 +10,7 @@ checksum = "bdca051497d8e15fcc5cb1b07ff75ee2afc3789b986ca9ee2af204847c0a9223"
 
 [[package]]
 name = "atomics"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "atomic-maybe-uninit",
  "bytemuck",
