@@ -19,7 +19,7 @@ pub struct SpinSeqLockEx<const B: isize, T> {
 }
 
 impl<const N: isize, T> SpinSeqLockEx<N, T> {
-    const UNLOCKED_LOCK: usize = 1;
+    const INIT_UNLOCKED: usize = 1;
     const LOCKED: usize = 0;
 }
 pub struct SpinSeqLockReadGuardEx<'a, const B: isize, T> {
@@ -45,14 +45,21 @@ impl<const B: isize, T> SpinSeqLockEx<B, T> {
     pub fn read(&self) -> SpinSeqLockReadGuardEx<'_, B, T> {
         let mut backoff = Backoff::<B>::new();
         loop {
-            let prev = self.version.swap(Self::LOCKED, Ordering::Acquire);
-
-            if prev != Self::LOCKED {
-                return SpinSeqLockReadGuardEx { cell: self, prev };
-            }
-
-            backoff.snooze();
+            let Some(guard) = self.try_read() else {
+                backoff.snooze();
+                continue;
+            };
+            return guard;
         }
+    }
+    #[inline]
+    pub fn try_read(&self) -> Option<SpinSeqLockReadGuardEx<'_, B, T>> {
+        let prev = self.version.swap(Self::LOCKED, Ordering::Acquire);
+
+        if prev != Self::LOCKED {
+            return Some(SpinSeqLockReadGuardEx { cell: self, prev });
+        }
+        None
     }
 }
 
@@ -86,18 +93,25 @@ impl<const B: isize, T> SpinSeqLockEx<B, T> {
     pub fn write(&self) -> SpinSeqLockWriteGuardEx<'_, B, T> {
         let mut backoff = Backoff::<B>::new();
         loop {
-            let prev = self.version.swap(Self::LOCKED, Ordering::Acquire);
-
-            if prev != Self::LOCKED {
-                fence(Ordering::Release);
-                return SpinSeqLockWriteGuardEx {
-                    cell: self,
-                    next: prev + 1,
-                };
-            }
-
-            backoff.snooze();
+            let Some(guard) = self.try_write() else {
+                backoff.snooze();
+                continue;
+            };
+            return guard;
         }
+    }
+    #[inline]
+    pub fn try_write(&self) -> Option<SpinSeqLockWriteGuardEx<'_, B, T>> {
+        let prev = self.version.swap(Self::LOCKED, Ordering::Acquire);
+
+        if prev != Self::LOCKED {
+            return Some(SpinSeqLockWriteGuardEx {
+                cell: self,
+                next: prev + 1,
+            });
+        }
+
+        None
     }
 }
 
@@ -118,7 +132,7 @@ impl<const B: isize, T: Copy> SpinSeqLockEx<B, T> {
     #[inline]
     fn optimistic_read(&self) -> Option<T> {
         #[cfg(not(miri))]
-        {
+        for _ in 0..DEFAULT_SPIN_LIMIT {
             let version = self.version.load(Ordering::Acquire);
             if version != Self::LOCKED {
                 // We need a volatile_read here because other threads might concurrently modify the value.
@@ -142,7 +156,7 @@ impl<const B: isize, T: Copy> SpinSeqLockEx<B, T> {
 }
 
 unsafe impl<const B: isize, T: Send> Send for SpinSeqLockEx<B, T> {}
-unsafe impl<const B: isize, T: Send> Sync for SpinSeqLockEx<B, T> {}
+unsafe impl<const B: isize, T: Send + Sync> Sync for SpinSeqLockEx<B, T> {}
 
 impl<const B: isize, T> SpinSeqLockEx<B, T> {
     #[inline]
@@ -161,7 +175,7 @@ impl<const B: isize, T> SpinSeqLockEx<B, T> {
     pub const fn new(val: T) -> Self {
         Self {
             data: UnsafeCell::new(val),
-            version: AtomicUsize::new(Self::UNLOCKED_LOCK),
+            version: AtomicUsize::new(Self::INIT_UNLOCKED),
         }
     }
     #[inline]
@@ -188,7 +202,7 @@ impl<const B: isize, T: Default> Default for SpinSeqLockEx<B, T> {
     fn default() -> Self {
         Self {
             data: UnsafeCell::new(T::default()),
-            version: AtomicUsize::new(Self::UNLOCKED_LOCK),
+            version: AtomicUsize::new(Self::INIT_UNLOCKED),
         }
     }
 }
@@ -196,20 +210,14 @@ impl<const B: isize, T: Copy> Clone for SpinSeqLockEx<B, T> {
     #[inline]
     fn clone(&self) -> Self {
         let data = self.load();
-        Self {
-            data: UnsafeCell::new(data),
-            version: AtomicUsize::new(Self::UNLOCKED_LOCK),
-        }
+        Self::new(data)
     }
 }
 impl<const B: isize, T: Clone> SpinSeqLockEx<B, T> {
     #[inline]
     pub fn clone2(&self) -> Self {
         let data = self.read();
-        Self {
-            data: UnsafeCell::new(data.clone()),
-            version: AtomicUsize::new(Self::UNLOCKED_LOCK),
-        }
+        Self::new(data.clone())
     }
 }
 impl<const B: isize, T: core::fmt::Debug + Copy> core::fmt::Debug for SpinSeqLockEx<B, T> {

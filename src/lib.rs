@@ -6,6 +6,7 @@ pub mod backoff;
 pub mod spin_mutex;
 pub mod spin_rwlock;
 pub mod spin_seqlock;
+pub mod atomic_spin_seqlock;
 
 macro_rules! const_type_assert {
     ($t:ident, $c:expr, $($arg:tt)*) => {{

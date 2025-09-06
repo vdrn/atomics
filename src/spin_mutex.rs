@@ -7,23 +7,23 @@ use core::{
 use crate::backoff::{Backoff, DEFAULT_SPIN_LIMIT};
 
 pub type SpinMutex<T> = SpinMutexEx<DEFAULT_SPIN_LIMIT, T>;
-pub type SpinMutexGuard<'a, T> = SpinMutexExGuard<'a, DEFAULT_SPIN_LIMIT, T>;
+pub type SpinMutexGuard<'a, T> = SpinMutexGuardEx<'a, DEFAULT_SPIN_LIMIT, T>;
 
 pub struct SpinMutexEx<const S: isize, T> {
     data: UnsafeCell<T>,
     locked: AtomicBool,
 }
 #[repr(transparent)]
-pub struct SpinMutexExGuard<'a, const S: isize, T> {
+pub struct SpinMutexGuardEx<'a, const S: isize, T> {
     lock: &'a SpinMutexEx<S, T>,
 }
-impl<const S: isize, T> Drop for SpinMutexExGuard<'_, S, T> {
+impl<const S: isize, T> Drop for SpinMutexGuardEx<'_, S, T> {
     #[inline]
     fn drop(&mut self) {
         self.lock.locked.store(false, Ordering::Release);
     }
 }
-impl<const S: isize, T> Deref for SpinMutexExGuard<'_, S, T> {
+impl<const S: isize, T> Deref for SpinMutexGuardEx<'_, S, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -40,7 +40,7 @@ impl<const S: isize, T: Default> Default for SpinMutexEx<S, T> {
         }
     }
 }
-impl<const S: isize, T> DerefMut for SpinMutexExGuard<'_, S, T> {
+impl<const S: isize, T> DerefMut for SpinMutexGuardEx<'_, S, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         // Safety: safe to deref while we hold the write lock
@@ -71,7 +71,7 @@ impl<const S: isize, T> SpinMutexEx<S, T> {
         self.data.get_mut()
     }
     #[inline]
-    pub fn lock(&self) -> SpinMutexExGuard<'_, S, T> {
+    pub fn lock(&self) -> SpinMutexGuardEx<'_, S, T> {
         let mut backoff = Backoff::<S>::new();
         loop {
             if self
@@ -79,7 +79,7 @@ impl<const S: isize, T> SpinMutexEx<S, T> {
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
                 .is_ok()
             {
-                return SpinMutexExGuard { lock: self };
+                return SpinMutexGuardEx { lock: self };
             }
             backoff.snooze();
         }
