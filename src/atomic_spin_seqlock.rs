@@ -82,7 +82,7 @@ impl<const B: isize, T> SpinSeqLockAtomicPtrEx<B, T> {
             return Some(SpinSeqLockAtomicPtrReadGuardEx {
                 cell: self,
                 prev,
-                ptr_snapshoot: self.load(),
+                ptr_snapshoot: self.ptr.load(Ordering::Acquire),
             });
         }
         None
@@ -107,7 +107,7 @@ impl<const B: isize, T> SpinSeqLockAtomicPtrEx<B, T> {
             return Some(SpinSeqLockAtomicPtrWriteGuardEx {
                 cell: self,
                 next: prev + 1,
-                ptr_snapshoot: self.load(),
+                ptr_snapshoot: self.ptr.load(Ordering::Acquire),
             });
         }
 
