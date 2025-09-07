@@ -156,7 +156,9 @@ impl<const B: isize, T: Copy> SpinSeqLockEx<B, T> {
 }
 
 unsafe impl<const B: isize, T: Send> Send for SpinSeqLockEx<B, T> {}
-unsafe impl<const B: isize, T: Send + Sync> Sync for SpinSeqLockEx<B, T> {}
+/// SAFETY: SpinSeqLock only supports copying out values, or single &T referece (via read-locking), so no need for
+/// `Sync` bound on `T`.
+unsafe impl<const B: isize, T: Send> Sync for SpinSeqLockEx<B, T> {}
 
 impl<const B: isize, T> SpinSeqLockEx<B, T> {
     #[inline]
