@@ -15,8 +15,10 @@ pub struct SpinSeqLockAtomicPtrEx<const B: isize, T> {
     version: AtomicUsize,
 }
 pub type SpinSeqLockAtomicPtr<T> = SpinSeqLockAtomicPtrEx<DEFAULT_SPIN_LIMIT, T>;
-pub type SpinSeqLockAtomicPtrReadGuard<'a, T> = SpinSeqLockAtomicPtrReadGuardEx<'a, DEFAULT_SPIN_LIMIT, T>;
-pub type SpinSeqLockAtomicPtrWriteGuard<'a, T> = SpinSeqLockAtomicPtrWriteGuardEx<'a, DEFAULT_SPIN_LIMIT, T>;
+pub type SpinSeqLockAtomicPtrReadGuard<'a, T> =
+    SpinSeqLockAtomicPtrReadGuardEx<'a, DEFAULT_SPIN_LIMIT, T>;
+pub type SpinSeqLockAtomicPtrWriteGuard<'a, T> =
+    SpinSeqLockAtomicPtrWriteGuardEx<'a, DEFAULT_SPIN_LIMIT, T>;
 
 pub struct SpinSeqLockAtomicPtrReadGuardEx<'a, const B: isize, T> {
     cell: &'a SpinSeqLockAtomicPtrEx<B, T>,
@@ -76,9 +78,14 @@ impl<const B: isize, T> SpinSeqLockAtomicPtrEx<B, T> {
     }
     #[inline]
     pub fn try_read(&self) -> Option<SpinSeqLockAtomicPtrReadGuardEx<'_, B, T>> {
-        let prev = self.version.swap(LOCKED, Ordering::Acquire);
+        let prev = self.version.load(Ordering::Relaxed);
 
-        if prev != LOCKED {
+        if prev != LOCKED
+            && self
+                .version
+                .compare_exchange(prev, LOCKED, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+        {
             return Some(SpinSeqLockAtomicPtrReadGuardEx {
                 cell: self,
                 prev,
@@ -101,9 +108,14 @@ impl<const B: isize, T> SpinSeqLockAtomicPtrEx<B, T> {
     }
     #[inline]
     pub fn try_write(&self) -> Option<SpinSeqLockAtomicPtrWriteGuardEx<'_, B, T>> {
-        let prev = self.version.swap(LOCKED, Ordering::Acquire);
+        let prev = self.version.load(Ordering::Relaxed);
 
-        if prev != LOCKED {
+        if prev != LOCKED
+            && self
+                .version
+                .compare_exchange(prev, LOCKED, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+        {
             return Some(SpinSeqLockAtomicPtrWriteGuardEx {
                 cell: self,
                 next: prev + 1,
@@ -137,6 +149,11 @@ impl<const B: isize, T> SpinSeqLockAtomicPtrEx<B, T> {
             }
         }
         None
+    }
+    #[inline]
+    pub fn load_maybe_outdated(&self) -> *mut T {
+        let data = self.ptr.load(Ordering::Relaxed);
+        data
     }
     #[inline]
     pub fn load(&self) -> *mut T {
@@ -179,16 +196,16 @@ impl<const B: isize, T> SpinSeqLockAtomicPtrEx<B, T> {
     pub fn get_mut(&mut self) -> &mut *mut T {
         self.ptr.get_mut()
     }
+    pub fn take(&self) -> *mut T {
+        mem::take(&mut self.write())
+    }
+    #[inline]
+    pub fn take_mut(&mut self) -> *mut T {
+        mem::take(&mut self.get_mut())
+    }
 }
 // impl<const B: isize, T> AtomicPtrSpinSeqLockEx<B, T> {
 //     #[inline]
-//     pub fn take(&self) -> AtomicPtr<T> {
-//         mem::take(&mut self.write())
-//     }
-//     #[inline]
-//     pub fn take_mut(&mut self) -> *mut T {
-//         mem::take(&mut self.get_mut())
-//     }
 // }
 impl<const B: isize, T: Default> Default for SpinSeqLockAtomicPtrEx<B, T> {
     #[inline]

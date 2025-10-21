@@ -74,10 +74,12 @@ impl<const S: isize, T> SpinMutexEx<S, T> {
     pub fn lock(&self) -> SpinMutexGuardEx<'_, S, T> {
         let mut backoff = Backoff::<S>::new();
         loop {
-            if self
-                .locked
-                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-                .is_ok()
+            // if !self.locked.swap(true, Ordering::Acquire) {
+            if !self.locked.load(Ordering::Relaxed)
+                && self
+                    .locked
+                    .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                    .is_ok()
             {
                 return SpinMutexGuardEx { lock: self };
             }

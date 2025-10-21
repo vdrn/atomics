@@ -10,7 +10,6 @@ pub type SpinRwLock<T> = SpinRwLockEx<DEFAULT_SPIN_LIMIT, T>;
 pub type SpinRwLockReadGuard<'a, T> = SpinRwLockReadGuardEx<'a, DEFAULT_SPIN_LIMIT, T>;
 pub type SpinRwLockWriteGuard<'a, T> = SpinRwLockWriteGuardEx<'a, DEFAULT_SPIN_LIMIT, T>;
 
-
 const SPIN_RW_LOCK_LOCKED: isize = -1;
 const SPIN_RW_LOCK_UNLOCKED: isize = 0;
 pub struct SpinRwLockEx<const S: isize, T> {
@@ -82,15 +81,16 @@ impl<const S: isize, T> SpinRwLockEx<S, T> {
     pub fn write(&self) -> SpinRwLockWriteGuardEx<'_, S, T> {
         let mut backoff = Backoff::<S>::new();
         loop {
-            if self
-                .readers
-                .compare_exchange(
-                    SPIN_RW_LOCK_UNLOCKED,
-                    SPIN_RW_LOCK_LOCKED,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                )
-                .is_ok()
+            if self.readers.load(Ordering::Relaxed) == SPIN_RW_LOCK_UNLOCKED
+                && self
+                    .readers
+                    .compare_exchange(
+                        SPIN_RW_LOCK_UNLOCKED,
+                        SPIN_RW_LOCK_LOCKED,
+                        Ordering::Acquire,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
             {
                 return SpinRwLockWriteGuardEx { lock: self };
             }

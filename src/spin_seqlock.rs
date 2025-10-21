@@ -54,9 +54,14 @@ impl<const B: isize, T> SpinSeqLockEx<B, T> {
     }
     #[inline]
     pub fn try_read(&self) -> Option<SpinSeqLockReadGuardEx<'_, B, T>> {
-        let prev = self.version.swap(Self::LOCKED, Ordering::Acquire);
+        let prev = self.version.load(Ordering::Relaxed);
 
-        if prev != Self::LOCKED {
+        if prev != Self::LOCKED
+            && self
+                .version
+                .compare_exchange(prev, Self::LOCKED, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+        {
             return Some(SpinSeqLockReadGuardEx { cell: self, prev });
         }
         None
@@ -102,9 +107,14 @@ impl<const B: isize, T> SpinSeqLockEx<B, T> {
     }
     #[inline]
     pub fn try_write(&self) -> Option<SpinSeqLockWriteGuardEx<'_, B, T>> {
-        let prev = self.version.swap(Self::LOCKED, Ordering::Acquire);
+        let prev = self.version.load(Ordering::Relaxed);
 
-        if prev != Self::LOCKED {
+        if prev != Self::LOCKED
+            && self
+                .version
+                .compare_exchange(prev, Self::LOCKED, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+        {
             return Some(SpinSeqLockWriteGuardEx {
                 cell: self,
                 next: prev + 1,
