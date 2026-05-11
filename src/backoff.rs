@@ -44,3 +44,35 @@ impl<const SPIN_LIMIT: isize> Backoff<SPIN_LIMIT> {
         }
     }
 }
+
+pub struct LinearBackoff<const MAX_SPIN_STEPS: usize, const SPINS_PER_STEP: usize> {
+    step: usize,
+}
+impl<const MAX_SPIN_STEPS: usize, const SPINS_PER_STEP: usize>
+    LinearBackoff<MAX_SPIN_STEPS, SPINS_PER_STEP>
+{
+    #[inline]
+    pub fn new() -> Self {
+        Self { step: 0 }
+    }
+    #[inline]
+    pub fn snooze(&mut self) {
+        if self.step < MAX_SPIN_STEPS {
+            for _ in 0..SPINS_PER_STEP {
+                core::hint::spin_loop();
+            }
+            self.step += 1;
+            return;
+        }
+        #[cfg(feature = "std")]
+        {
+            std::thread::yield_now();
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            for _ in 0..SPINS_PER_STEP {
+                core::hint::spin_loop();
+            }
+        }
+    }
+}
